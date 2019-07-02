@@ -1,0 +1,138 @@
+---
+title: "Untitled"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(odbc)
+con <- dbConnect(odbc::odbc(), dsn = "POC", uid = "NETID\\mienko", 
+    pwd = "bigjose007")
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r get_data}
+library(DBI)
+library(tidyverse)
+library(dbplyr)
+tPlacements")
+
+con %>% 
+  tbl(in_schema("base", "rptPlacement")) %>%
+  filter(cd_cnty %in% c(9, 13, 21, 37))
+
+with legal_activity as
+(
+select  
+	id_prsn  
+	,id_calendar_dim_effective 
+	,tx_jurisdiction 
+	,tx_legal_action 
+from legal_fact lf
+	join legal_action_dim lad
+		on lf.id_legal_action_dim = lad.id_legal_action_dim
+	join legal_jurisdiction_dim ljd
+		on lf.id_legal_jurisdiction_dim = ljd.id_legal_jurisdiction_dim
+where id_calendar_dim_effective > 20170901
+	and cd_legaL_action in (2) -- dependency petition 
+	and cd_jurisdiction in (9, 13, 20, 35) -- pilot counties 
+), full_episode_history_no_rank as
+(
+select distinct 
+	rp.id_removal_episode_fact
+	,child id_prsn_child
+	,removal_dt 
+from base.rptPlacement rp
+	join legal_activity la
+		on la.id_prsn = rp.child 
+where child_age < 18
+union all 
+select distinct 
+	rp.id_removal_episode_fact
+	,child id_prsn_child
+	,removal_dt 
+from base.rptPlacement rp
+where child_age < 18
+	and cd_cnty in (9, 13, 21, 37)
+	and fl_dep_exist = 1
+), full_episode_history as
+(
+select 
+	*
+	,dense_rank() over (partition by id_prsn_child order by id_removal_episode_fact) episode_rank
+from full_episode_history_no_rank
+), first_episodes_in_pilot as
+(
+select 
+min(id_removal_episode_fact) id_removal_episode_fact
+,id_prsn_child
+from full_episode_history
+where removal_dt > '2017-09-01'
+group by id_prsn_child
+)
+
+select distinct 
+	feh.id_prsn_child
+	,feh.id_removal_episode_fact
+	,episode_rank
+	,rp.removal_dt 
+	,case
+		when discharge_dt = '9999-12-31'
+		then runtime 
+		else discharge_dt 
+	end discharge_dt
+	,datediff(dd, rp.removal_dt, case
+		when discharge_dt = '9999-12-31'
+		then runtime 
+		else discharge_dt 
+	end) los  
+	,dbo.fnc_datediff_yrs(birthdate, rp.removal_dt) age_at_entry
+	,alt_discharge_type
+	,null tx_jurisdiction 
+	,cd_cnty
+	,fl_abandonment
+	,fl_caretaker_inability_cope
+	,fl_child_abuse_alcohol
+	,fl_child_abuses_drug
+	,fl_child_behavior_problems
+	,fl_inadequate_housng
+	,fl_neglect
+	,fl_parent_abuse_alcohol
+	,fl_parent_death
+	,fl_parent_drug_abuse
+	,fl_parent_incarceration
+	,fl_physical_abuse
+	,fl_sex_abuse
+	,fl_relinquishment
+	,tx_braam_race
+, legally_free_date
+from base.rptPlacement rp
+	join full_episode_history feh
+		on rp.id_removal_episode_fact = feh.id_removal_episode_fact
+	join first_episodes_in_pilot fep
+		on feh.id_removal_episode_fact = fep.id_removal_episode_fact
+	left join vw_legally_free lf
+		on feh.id_prsn_child = lf.id_prsn_child
+			and legally_free_date <= discharge_dt
+	join dbo.ref_lookup_cd_discharge_type_exits rd
+		on rp.cd_discharge_type = rd.cd_discharge_type
+order by id_prsn_child, id_removal_episode_fact 
+
+
+
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
